@@ -117,6 +117,7 @@ def main() -> None:
     cap.set(cv2.CAP_PROP_FRAME_HEIGHT, 720)
 
     t0 = time.monotonic()
+    last_ts = -1
     prev = t0
     fps = 0.0
 
@@ -130,8 +131,10 @@ def main() -> None:
 
             rgb = cv2.cvtColor(frame, cv2.COLOR_BGR2RGB)
             mp_image = mp.Image(image_format=mp.ImageFormat.SRGB, data=rgb)
-            timestamp_ms = int((time.monotonic() - t0) * 1000)
-
+            # Sometimes two frames arrive in the same ms and MediaPipe crashes with
+            # "Input timestamp must be monotonically increasing", so force it to go up
+            timestamp_ms = max(int((time.monotonic() - t0) * 1000), last_ts + 1)
+            last_ts = timestamp_ms
             result = landmarker.detect_for_video(mp_image, timestamp_ms)
 
             msg = {"t": time.time(), "detected": False}
