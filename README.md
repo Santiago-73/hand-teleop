@@ -71,7 +71,7 @@ It finds the WSL IP by itself (`--host` to override, `--no-send` to only see the
 Measured on my laptop, so take them as rough numbers:
 
 - Sending three fixed hand positions over UDP, panda_link8 ended up less than 1 mm from each target, with the orientation unchanged and the gripper opening and closing correctly.
-- Tracker: about 19 FPS at 1280x720, with MediaPipe taking around 49 ms per frame on the CPU. That's the main bottleneck.
+- Tracker: between 19 and 32 FPS at 1280x720 depending on the run. My first measurement gave 19 (MediaPipe taking around 49 ms per frame on the CPU), the demo recording shows around 31. Either way MediaPipe is the main bottleneck.
 - UDP packet to /hand/target: median 32 ms (22 to 52 ms over 20 tries), measured inside WSL. The Windows to WSL hop itself is under 1 ms (0.4 ms round trip).
 
 The mapping has a few unit tests: `cd ros2/hand_teleop_bridge && python3 -m pytest test`.
