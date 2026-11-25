@@ -23,10 +23,10 @@ class Workspace:
 
 
 def image_to_robot(x: float, y: float, size: float, ws: Workspace) -> tuple[float, float, float]:
-    # Image is already mirrored. Hand right -> -Y, hand up -> +Z, closer -> +X,
-    # so it feels like standing behind the robot.
+    # Image is already mirrored. Hand right -> +Y, hand up -> +Z, closer -> +X,
+    # so it moves like a mirror when you face the robot (or the RViz view).
     rx = lerp_clamped(size, ws.size_far, ws.size_near, ws.x_min, ws.x_max)
-    ry = lerp_clamped(x, 0.0, 1.0, ws.y_max, ws.y_min)
+    ry = lerp_clamped(x, 0.0, 1.0, ws.y_min, ws.y_max)
     rz = lerp_clamped(y, 0.0, 1.0, ws.z_max, ws.z_min)
     return rx, ry, rz
 
