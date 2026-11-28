@@ -4,7 +4,7 @@ Control a simulated Panda arm (ROS 2 Jazzy + MoveIt Servo) by moving your hand i
 
 ![demo](docs/demo.gif)
 
-The gestures in action (open, pinch, fist clutch, thumbs up): [docs/demo.mp4](docs/demo.mp4)
+Open hand, pinch, fist (clutch) and thumbs up (recenter). Sharper version: [docs/demo.mp4](docs/demo.mp4)
 
 I built this during my Erasmus in Skövde, mostly as an excuse to learn MoveIt Servo properly. The plan is to move it to a real arm next.
 
