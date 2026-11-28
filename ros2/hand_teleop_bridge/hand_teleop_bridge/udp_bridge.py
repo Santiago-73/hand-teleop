@@ -1,14 +1,18 @@
-"""Receives the hand from hand_tracker.py over UDP and publishes it on /hand/*."""
+"""Receives the hand from hand_tracker.py over UDP and publishes it on /hand/*.
+
+/hand/target, /hand/gripper_closed, /hand/pinch, /hand/gesture, /hand/clutch, /hand/marker
+"""
 import json
 import socket
 
 import rclpy
 from geometry_msgs.msg import PointStamped
 from rclpy.node import Node
-from std_msgs.msg import Bool, Float32
+from std_msgs.msg import Bool, Float32, String
 from visualization_msgs.msg import Marker
 
-from hand_teleop_bridge.mapping import Ema, Workspace, image_to_robot
+from hand_teleop_bridge.actions import GestureActions, gesture_from_msg
+from hand_teleop_bridge.mapping import Clutch, Ema, Workspace, image_to_robot
 
 
 class UdpBridge(Node):
@@ -28,6 +32,8 @@ class UdpBridge(Node):
         self.timeout = g("timeout")
         self.ws = Workspace(**{n: float(g(n)) for n in vars(ws_defaults)})
         self.ema = Ema(g("smoothing"))
+        self.clutch = Clutch(self.ws)
+        self.actions = GestureActions()
 
         self.sock = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
         self.sock.bind(("0.0.0.0", g("port")))
@@ -37,6 +43,8 @@ class UdpBridge(Node):
         self.pub_closed = self.create_publisher(Bool, "hand/gripper_closed", 10)
         self.pub_pinch = self.create_publisher(Float32, "hand/pinch", 10)
         self.pub_marker = self.create_publisher(Marker, "hand/marker", 10)
+        self.pub_gesture = self.create_publisher(String, "hand/gesture", 10)
+        self.pub_clutch = self.create_publisher(Bool, "hand/clutch", 10)
 
         self.last_msg = None
         self.last_rx = None
@@ -70,13 +78,27 @@ class UdpBridge(Node):
                 self.get_logger().info("Hand lost")
                 self.lost_logged = True
             self.ema.reset()
+            self.clutch.engage()  # so the arm doesn't jump when the hand comes back
             return
         if self.lost_logged:
             self.get_logger().info("Hand detected")
             self.lost_logged = False
 
-        x, y, z = self.ema(image_to_robot(m["x"], m["y"], m["size"], self.ws))
-        closed = bool(m["closed"])
+        gesture = gesture_from_msg(m)
+        if gesture != self.actions.gesture:
+            self.get_logger().info(f"Gesture: {gesture}")
+        cmd = self.actions(gesture)
+        if cmd.recenter:
+            self.clutch.recenter()
+            self.get_logger().info("Recentered")
+        hand = self.ema(image_to_robot(m["x"], m["y"], m["size"], self.ws))
+        out = self.clutch(hand, cmd.clutch)
+        self.pub_gesture.publish(String(data=gesture))
+        self.pub_clutch.publish(Bool(data=cmd.clutch))
+        if out is None:
+            return
+        x, y, z = out
+        closed = cmd.gripper_closed
         stamp = self.get_clock().now().to_msg()
 
         target = PointStamped()
@@ -95,7 +117,8 @@ class UdpBridge(Node):
         marker.pose.orientation.w = 1.0
         marker.scale.x = marker.scale.y = marker.scale.z = 0.05
         marker.color.a = 1.0
-        marker.color.r, marker.color.g = (1.0, 0.0) if closed else (0.0, 1.0)  # red = closed
+        # red = closed, green = open, yellow = clutch
+        marker.color.r, marker.color.g = (1.0, 1.0) if cmd.clutch else (1.0, 0.0) if closed else (0.0, 1.0)
         self.pub_marker.publish(marker)
 
 
