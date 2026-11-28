@@ -7,3 +7,4 @@ log/
 .vscode/
 *.tar.gz
 *.b64
+.pytest_cache/

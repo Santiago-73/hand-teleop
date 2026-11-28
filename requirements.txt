@@ -1,1 +1,3 @@
 mediapipe>=0.10.20
+scikit-learn  # only for train_gestures.py
+pytest

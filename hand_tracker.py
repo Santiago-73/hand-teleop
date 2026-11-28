@@ -1,4 +1,4 @@
-"""Webcam hand tracking with MediaPipe, sends the palm position over UDP to the ROS 2 bridge."""
+"""Webcam hand tracking with MediaPipe, sends the palm position and gesture over UDP to the ROS 2 bridge."""
 import argparse
 import json
 import socket
@@ -11,13 +11,15 @@ import cv2
 import mediapipe as mp
 from mediapipe.tasks.python import BaseOptions, vision
 
+from gestures import Debouncer, load_classifier, to_array
+
 MODEL_URL = (
     "https://storage.googleapis.com/mediapipe-models/hand_landmarker/"
     "hand_landmarker/float16/1/hand_landmarker.task"
 )
 MODEL_PATH = Path(__file__).with_name("hand_landmarker.task")
+GESTURE_MODEL = Path(__file__).parent / "models" / "gesture_mlp.json"
 CAMERA_INDEX = 0
-PINCH_THRESHOLD = 0.35  # tuned by hand, works for me
 
 # 0 wrist, 1-4 thumb, 5-8 index, 9-12 middle, 13-16 ring, 17-20 pinky
 HAND_CONNECTIONS = [
@@ -30,6 +32,7 @@ HAND_CONNECTIONS = [
 ]
 WRIST, THUMB_TIP, INDEX_TIP, MIDDLE_MCP = 0, 4, 8, 9
 PALM_POINTS = (0, 5, 9, 13, 17)  # wrist + knuckles, steadier than the wrist alone
+GESTURE_COLORS = {"open": (0, 200, 0), "pinch": (0, 0, 255), "fist": (0, 200, 255), "thumbs_up": (255, 0, 255)}
 
 
 def wsl_ip() -> str:
@@ -90,6 +93,8 @@ def main() -> None:
     parser.add_argument("--host", help="bridge IP (default: WSL IP)")
     parser.add_argument("--port", type=int, default=5005)
     parser.add_argument("--no-send", action="store_true", help="just show the camera")
+    parser.add_argument("--gesture-model", type=Path, default=GESTURE_MODEL)
+    parser.add_argument("--rules", action="store_true", help="use the rule-based gestures even if there's a model")
     args = parser.parse_args()
 
     sock = None
@@ -116,6 +121,10 @@ def main() -> None:
     cap.set(cv2.CAP_PROP_FRAME_WIDTH, 1280)
     cap.set(cv2.CAP_PROP_FRAME_HEIGHT, 720)
 
+    classifier = load_classifier(args.gesture_model, args.rules)
+    debounce = Debouncer()
+    print(f"Gestures: {classifier.name}")
+
     t0 = time.monotonic()
     last_ts = -1
     prev = t0
@@ -140,19 +149,23 @@ def main() -> None:
             msg = {"t": time.time(), "detected": False}
             if result.hand_landmarks:
                 lm = result.hand_landmarks[0]
+                is_left = result.handedness[0][0].category_name == "Left"
+                raw, conf = classifier.predict(to_array(lm), is_left)
+                gesture = debounce(raw, conf)
                 ratio = pinch_ratio(lm)
-                closed = ratio < PINCH_THRESHOLD
+                closed = gesture == "pinch"
                 draw_hand(frame, lm, closed)
                 cx, cy = palm_center(lm)
                 size = hand_size_px(lm, frame.shape[1], frame.shape[0])
-                msg.update(detected=True, x=cx, y=cy, size=size, pinch=ratio, closed=closed)
+                msg.update(detected=True, x=cx, y=cy, size=size, pinch=ratio, closed=closed,
+                           gesture=gesture, gesture_conf=round(conf, 3))
                 cv2.circle(frame, (int(cx * frame.shape[1]), int(cy * frame.shape[0])), 9, (255, 255, 0), 2)
                 cv2.putText(frame, f"Palm x={cx:.2f} y={cy:.2f} size={size:.3f}",
                             (10, 60), cv2.FONT_HERSHEY_SIMPLEX, 0.7, (255, 255, 0), 2)
-                cv2.putText(frame, f"Pinch {'CLOSED' if closed else 'open'} ({ratio:.2f})",
-                            (10, 90), cv2.FONT_HERSHEY_SIMPLEX, 0.7,
-                            (0, 0, 255) if closed else (0, 200, 0), 2)
+                cv2.putText(frame, f"{gesture.upper()}  ({classifier.name}: {raw} {conf:.2f})",
+                            (10, 90), cv2.FONT_HERSHEY_SIMPLEX, 0.7, GESTURE_COLORS.get(gesture, (255, 255, 255)), 2)
             else:
+                debounce.reset()
                 cv2.putText(frame, "No hand", (10, 60), cv2.FONT_HERSHEY_SIMPLEX, 0.7, (0, 0, 255), 2)
 
             if sock:
