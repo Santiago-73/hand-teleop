@@ -2,7 +2,7 @@
 
 Control a simulated Panda arm (ROS 2 Jazzy + MoveIt Servo) by moving your hand in front of a webcam. Pinch to close the gripper, make a fist to clutch, thumbs up to recenter. The gestures come from a rule-based classifier, or from a small MLP trained on your own recordings.
 
-![demo](docs/demo.gif)
+![demo](docs/demo_gestures.gif)
 
 Open hand, pinch, fist (clutch) and thumbs up (recenter). Sharper version: [docs/demo.mp4](docs/demo.mp4)
 
